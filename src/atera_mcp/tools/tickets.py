@@ -19,14 +19,15 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
 from ..api_client import AteraClient
-from ._common import READ_ONLY, WRITES, ClientFactory, ItemsInPage, Page, list_result, page_params, run_tool
+from ._common import READ_ONLY, WRITES, ClientFactory, ItemsInPage, Page, enum_value, list_result, page_params, run_tool
 
 TicketId = Annotated[int, Field(description="Ticket id (from atera_tickets_list).")]
-Priority = Annotated[Literal["Low", "Medium", "High", "Critical"] | None, Field(description="Priority.")]
-Impact = Annotated[
-    Literal["NoImpact", "Minor", "Major", "Site Down", "Crisis"] | None, Field(description="Business impact.")
-]
-Status = Annotated[Literal["Open", "Pending", "Resolved", "Closed"] | None, Field(description="Ticket status.")]
+PriorityValue = Literal["Low", "Medium", "High", "Critical"]
+ImpactValue = Literal["NoImpact", "Minor", "Major", "Site Down", "Crisis"]
+StatusValue = Literal["Open", "Pending", "Resolved", "Closed"]
+Priority = Annotated[PriorityValue | str | None, Field(description="Priority.")]
+Impact = Annotated[ImpactValue | str | None, Field(description="Business impact.")]
+Status = Annotated[StatusValue | str | None, Field(description="Ticket status.")]
 TicketType = Annotated[str | None, Field(description="Ticket type, e.g. Problem, Request, Incident, Change.")]
 Technician = Annotated[int | None, Field(description="Technician contact id to assign.")]
 
@@ -70,7 +71,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
         async def action(client: AteraClient) -> dict:
             params = page_params(page, itemsInPage) | _compact(
                 {
-                    "TicketStatus": ticketStatus,
+                    "TicketStatus": enum_value(ticketStatus, StatusValue),
                     "CustomerID": customerId,
                     "TechnicianID": technicianId,
                     "DateFrom": dateFrom,
@@ -112,9 +113,9 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                     "CustomerID": CustomerID,
                     "CustomerEmail": CustomerEmail,
                     "ContactID": ContactID,
-                    "TicketPriority": TicketPriority,
-                    "TicketImpact": TicketImpact,
-                    "TicketStatus": TicketStatus,
+                    "TicketPriority": enum_value(TicketPriority, PriorityValue),
+                    "TicketImpact": enum_value(TicketImpact, ImpactValue),
+                    "TicketStatus": enum_value(TicketStatus, StatusValue),
                     "TicketType": TicketType,
                     "TechnicianContactID": TechnicianContactID,
                     "Description": Description,
@@ -143,9 +144,9 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
             body = _compact(
                 {
                     "TicketTitle": TicketTitle,
-                    "TicketPriority": TicketPriority,
-                    "TicketImpact": TicketImpact,
-                    "TicketStatus": TicketStatus,
+                    "TicketPriority": enum_value(TicketPriority, PriorityValue),
+                    "TicketImpact": enum_value(TicketImpact, ImpactValue),
+                    "TicketStatus": enum_value(TicketStatus, StatusValue),
                     "TicketType": TicketType,
                     "TechnicianContactID": TechnicianContactID,
                 }

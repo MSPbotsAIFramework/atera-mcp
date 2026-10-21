@@ -16,7 +16,7 @@
 import logging
 import time
 from collections.abc import Awaitable, Callable, Iterable
-from typing import Annotated, Any
+from typing import Annotated, Any, get_args
 
 from mcp.types import ToolAnnotations
 from pydantic import Field
@@ -70,6 +70,17 @@ def list_result(document: Any, fields: Iterable[str] | None = None) -> dict[str,
         "total_items": doc.get("totalItemCount"),
         "has_more": has_more,
     }
+
+
+def enum_value(value: Any, choices: Any) -> Any:
+    """Canonical spelling of a case-insensitive match in ``choices`` (a Literal type).
+
+    Any other value passes through unchanged, so the API decides (older callers sent free text).
+    """
+    if not isinstance(value, str):
+        return value
+    wanted = value.strip().lower()
+    return next((c for c in get_args(choices) if isinstance(c, str) and c.lower() == wanted), value)
 
 
 async def run_tool(

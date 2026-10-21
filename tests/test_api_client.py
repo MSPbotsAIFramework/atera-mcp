@@ -208,3 +208,23 @@ def test_client_never_sends_both_auth_headers():
     for key in (JWT_KEY, "legacy-key"):
         headers = AteraClient(AteraCredentials(key))._headers()
         assert ("Authorization" in headers) != ("X-API-KEY" in headers)
+
+
+# ---- compatibility: enum params accept any casing (normalized) and unknown values (passed through)
+
+
+@pytest.mark.parametrize("given,sent", [("open", "Open"), ("CLOSED", "Closed"), ("Waiting", "Waiting")])
+async def test_ticket_list_status_normalized_or_passed_through(monkeypatch, given, sent):
+    rec = Recorder()
+    await _call(monkeypatch, rec, "atera_tickets_list", {"ticketStatus": given})
+    assert rec.requests[0].url.params["TicketStatus"] == sent
+
+
+@pytest.mark.parametrize("tool,extra", [("atera_tickets_create", {"TicketTitle": "VPN down", "CustomerID": 7}), ("atera_tickets_update", {"ticketId": 101})])
+async def test_ticket_write_enums_normalized_or_passed_through(monkeypatch, tool, extra):
+    rec = Recorder(lambda r: httpx.Response(200, json={"ActionID": 1}))
+    args = extra | {"TicketPriority": "critical", "TicketImpact": "site down", "TicketStatus": "On Hold"}
+    result = await _call(monkeypatch, rec, tool, args)
+    assert "error" not in result
+    sent = json.loads(rec.requests[0].content)
+    assert (sent["TicketPriority"], sent["TicketImpact"], sent["TicketStatus"]) == ("Critical", "Site Down", "On Hold")
