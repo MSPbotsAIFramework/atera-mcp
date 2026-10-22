@@ -20,7 +20,7 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
 from ..api_client import AteraClient
-from ._common import READ_ONLY, ClientFactory, ItemsInPage, Page, list_result, page_params, run_tool
+from ._common import READ_ONLY, ClientFactory, ItemsInPage, Offset, Page, list_result, locate, page_params, run_tool
 
 # Fields kept in the list view; atera_agents_get returns the full record.
 SUMMARY_FIELDS = (
@@ -49,6 +49,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
         page: Page = None,
         itemsInPage: ItemsInPage = None,
         customerId: Annotated[int | None, Field(description="Only this customer's agents.")] = None,
+        offset: Offset = None,
     ) -> str:
         """List agents (monitored machines): name, customer, online state, OS, last seen, user.
 
@@ -56,10 +57,11 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
         """
 
         async def action(client: AteraClient) -> dict:
-            params = page_params(page, itemsInPage)
+            number, size, start = locate(offset, page, itemsInPage)
+            params = page_params(number, size)
             if customerId is not None:
                 params["CustomerID"] = int(customerId)
-            return list_result(await client.get("/agents", params), SUMMARY_FIELDS)
+            return list_result(await client.get("/agents", params), SUMMARY_FIELDS, number, size, start)
 
         return await run_tool("atera_agents_list", client_factory, action)
 

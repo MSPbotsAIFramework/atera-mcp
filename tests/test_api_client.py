@@ -21,6 +21,8 @@ import pytest
 from atera_mcp import api_client
 from atera_mcp.api_client import AteraClient, AteraCredentials, is_jwt
 from atera_mcp.server import _credentials_var, create_mcp_server
+from atera_mcp.tools.agents import SUMMARY_FIELDS as AGENT_FIELDS
+from atera_mcp.tools.tickets import SUMMARY_FIELDS as TICKET_FIELDS
 
 JWT_KEY = "eyJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJleGFtcGxlIn0.c2lnbmF0dXJl"
 
@@ -228,3 +230,127 @@ async def test_ticket_write_enums_normalized_or_passed_through(monkeypatch, tool
     assert "error" not in result
     sent = json.loads(rec.requests[0].content)
     assert (sent["TicketPriority"], sent["TicketImpact"], sent["TicketStatus"]) == ("Critical", "Site Down", "On Hold")
+
+
+# ---- Page-number paging that survives truncation (offset / next_offset) -----------------------------
+# Self-test checklist: a cut page continues right after the last record returned (from page 1 and
+# from a later page); offset aligned / not aligned to a page; offset 0; offset past the end; offset
+# wins over page; page-only calls send the same request as before; no retry hint for a page size.
+
+TOTAL = 137
+_TEXT_KEYS = sorted((set(AGENT_FIELDS) | set(TICKET_FIELDS)) - {"AgentID", "TicketID"})
+# 75-character values are never shortened (the mildest-but-one shrink limit is 80), so pages really get cut.
+ROWS = [{"id": i, "AgentID": i, "TicketID": i, **{k: f"{k} {i} ".ljust(75, "x") for k in _TEXT_KEYS}} for i in range(TOTAL)]
+SMALL = [{"id": i, "AgentID": i, "TicketID": i} for i in range(TOTAL)]
+
+PAGED_TOOLS = [
+    ("atera_customers_list", "/api/v3/customers", {}, "id"),
+    ("atera_agents_list", "/api/v3/agents", {}, "AgentID"),
+    ("atera_tickets_list", "/api/v3/tickets", {}, "TicketID"),
+    ("atera_alerts_list", "/api/v3/alerts", {}, "id"),
+    ("atera_alerts_by_agent", "/api/v3/alerts/agent/5", {"agentId": 5}, "id"),
+    ("atera_alerts_by_device", "/api/v3/alerts/device/6", {"deviceId": 6}, "id"),
+    ("atera_contacts_list", "/api/v3/contacts", {}, "id"),
+    ("atera_contacts_by_customer", "/api/v3/contacts/customer/7", {"customerId": 7}, "id"),
+]
+
+
+def _paged_api(route, rows):
+    """Pages by Page / ItemsInPage like Atera: {items, page, itemsInPage, totalPages, totalItemCount, nextLink}."""
+
+    def reply(request):
+        assert request.url.path == route
+        number, size = int(request.url.params["Page"]), int(request.url.params["ItemsInPage"])
+        pages = -(-len(rows) // size)
+        more = number < pages
+        return httpx.Response(
+            200,
+            json={
+                "items": rows[(number - 1) * size : number * size],
+                "page": number,
+                "itemsInPage": size,
+                "totalPages": pages,
+                "totalItemCount": len(rows),
+                "prevLink": None,
+                "nextLink": f"https://app.atera.com{route}?page={number + 1}&itemsInPage={size}" if more else None,
+            },
+        )
+
+    return Recorder(reply)
+
+
+def _sent(rec, i=0):
+    params = rec.requests[i].url.params
+    return int(params["Page"]), int(params["ItemsInPage"])
+
+
+async def _walk(monkeypatch, rec, tool, args, id_key):
+    ids, calls, cut = [], 0, 0
+    while True:
+        result = await _call(monkeypatch, rec, tool, args)
+        calls += 1
+        assert "retry_page_size" not in result, result.get("note")
+        cut += bool(result.get("truncated"))
+        ids += [r[id_key] for r in result["items"]]
+        if result.get("next_offset") is None:
+            return ids, calls, cut
+        args = {k: v for k, v in args.items() if k != "page"} | {"offset": result["next_offset"]}
+        assert calls < 200
+
+
+@pytest.mark.parametrize("tool,route,extra,id_key", PAGED_TOOLS)
+async def test_cut_pages_continue_without_gaps_from_page_1(monkeypatch, tool, route, extra, id_key):
+    ids, _, cut = await _walk(monkeypatch, _paged_api(route, ROWS), tool, extra, id_key)
+    assert cut > 0  # pages really were cut
+    assert ids == list(range(TOTAL))  # no gaps, no duplicates
+
+
+@pytest.mark.parametrize("tool,route,extra,id_key", PAGED_TOOLS)
+async def test_cut_pages_continue_without_gaps_from_a_later_page(monkeypatch, tool, route, extra, id_key):
+    rec = _paged_api(route, ROWS)
+    ids, _, cut = await _walk(monkeypatch, rec, tool, extra | {"page": 3, "itemsInPage": 40}, id_key)
+    assert cut > 0
+    assert _sent(rec) == (3, 40)
+    assert ids == list(range(80, TOTAL))
+
+
+@pytest.mark.parametrize("tool,route,extra,id_key", PAGED_TOOLS)
+@pytest.mark.parametrize("offset,size,page,first", [(30, 25, 2, 30), (50, 25, 3, 50), (0, 25, 1, 0), (120, None, 3, 120)])
+async def test_offset_reads_the_page_that_holds_it(monkeypatch, tool, route, extra, id_key, offset, size, page, first):
+    rec = _paged_api(route, SMALL)
+    args = extra | {"offset": offset} | ({"itemsInPage": size} if size else {})
+    result = await _call(monkeypatch, rec, tool, args)
+    real_size = size or 50  # Atera's default and maximum page size
+    assert _sent(rec) == (page, real_size)
+    assert result["items"][0][id_key] == first and result["offset"] == offset
+    expected_next = page * real_size if page * real_size < TOTAL else None
+    assert result["next_offset"] == expected_next  # rest of the page returned, next page starts after it
+
+
+@pytest.mark.parametrize("tool,route,extra,id_key", PAGED_TOOLS)
+async def test_offset_past_the_end_is_empty(monkeypatch, tool, route, extra, id_key):
+    result = await _call(monkeypatch, _paged_api(route, SMALL), tool, extra | {"offset": 500, "itemsInPage": 25})
+    assert (result["count"], result["has_more"], result.get("next_offset")) == (0, False, None)
+
+
+@pytest.mark.parametrize("tool,route,extra,id_key", PAGED_TOOLS)
+async def test_offset_wins_over_page(monkeypatch, tool, route, extra, id_key):
+    rec = _paged_api(route, SMALL)
+    result = await _call(monkeypatch, rec, tool, extra | {"offset": 10, "page": 4, "itemsInPage": 10})
+    assert _sent(rec) == (2, 10) and result["items"][0][id_key] == 10
+
+
+@pytest.mark.parametrize("tool,route,extra,id_key", PAGED_TOOLS)
+@pytest.mark.parametrize("args,sent", [({"page": 2, "itemsInPage": 25}, (2, 25)), ({}, (1, 50)), ({"itemsInPage": 500}, (1, 50))])
+async def test_page_only_sends_the_same_request_as_before(monkeypatch, tool, route, extra, id_key, args, sent):
+    rec = _paged_api(route, SMALL)
+    result = await _call(monkeypatch, rec, tool, extra | args)
+    assert dict(rec.requests[0].url.params).keys() >= {"Page", "ItemsInPage"} and _sent(rec) == sent
+    number, size = sent
+    assert [r[id_key] for r in result["items"]] == list(range((number - 1) * size, number * size))
+    assert (result["page"], result["offset"], result["next_offset"], result["has_more"]) == (
+        number,
+        (number - 1) * size,
+        number * size,
+        True,
+    )

@@ -19,18 +19,31 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
 from ..api_client import AteraClient
-from ._common import READ_ONLY, WRITES, ClientFactory, CustomerId, ItemsInPage, Page, list_result, page_params, run_tool
+from ._common import (
+    READ_ONLY,
+    WRITES,
+    ClientFactory,
+    CustomerId,
+    ItemsInPage,
+    Offset,
+    Page,
+    list_result,
+    locate,
+    page_params,
+    run_tool,
+)
 
 Text = Annotated[str | None, Field(description="Optional.")]
 
 
 def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
     @mcp.tool(annotations=READ_ONLY)
-    async def atera_customers_list(page: Page = None, itemsInPage: ItemsInPage = None) -> str:
+    async def atera_customers_list(page: Page = None, itemsInPage: ItemsInPage = None, offset: Offset = None) -> str:
         """List customers (the MSP's clients) with id, name, domain and contact details."""
 
         async def action(client: AteraClient) -> dict:
-            return list_result(await client.get("/customers", page_params(page, itemsInPage)))
+            number, size, start = locate(offset, page, itemsInPage)
+            return list_result(await client.get("/customers", page_params(number, size)), None, number, size, start)
 
         return await run_tool("atera_customers_list", client_factory, action)
 

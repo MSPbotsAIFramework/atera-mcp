@@ -19,7 +19,7 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
 from ..api_client import AteraClient
-from ._common import READ_ONLY, ClientFactory, ItemsInPage, Page, list_result, page_params, run_tool
+from ._common import READ_ONLY, ClientFactory, ItemsInPage, Offset, Page, list_result, locate, page_params, run_tool
 
 
 def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
@@ -32,15 +32,17 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
         ] = None,
         customerId: Annotated[int | None, Field(description="Only this customer's alerts.")] = None,
         archived: Annotated[bool | None, Field(description="true = archived alerts, false = active ones.")] = None,
+        offset: Offset = None,
     ) -> str:
         """List monitoring alerts: title, severity, source device/agent, customer, created date."""
 
         async def action(client: AteraClient) -> dict:
-            params = page_params(page, itemsInPage)
+            number, size, start = locate(offset, page, itemsInPage)
+            params = page_params(number, size)
             for key, value in (("AlertSeverity", alertSeverity), ("CustomerID", customerId), ("Archived", archived)):
                 if value is not None:
                     params[key] = value
-            return list_result(await client.get("/alerts", params))
+            return list_result(await client.get("/alerts", params), None, number, size, start)
 
         return await run_tool("atera_alerts_list", client_factory, action)
 
@@ -60,11 +62,14 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
         agentId: Annotated[int, Field(description="Agent id.")],
         page: Page = None,
         itemsInPage: ItemsInPage = None,
+        offset: Offset = None,
     ) -> str:
         """List the alerts raised by one agent (monitored machine)."""
 
         async def action(client: AteraClient) -> dict:
-            return list_result(await client.get(f"/alerts/agent/{int(agentId)}", page_params(page, itemsInPage)))
+            number, size, start = locate(offset, page, itemsInPage)
+            document = await client.get(f"/alerts/agent/{int(agentId)}", page_params(number, size))
+            return list_result(document, None, number, size, start)
 
         return await run_tool("atera_alerts_by_agent", client_factory, action)
 
@@ -73,10 +78,13 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
         deviceId: Annotated[int, Field(description="Monitored device id (SNMP/TCP/HTTP/generic device).")],
         page: Page = None,
         itemsInPage: ItemsInPage = None,
+        offset: Offset = None,
     ) -> str:
         """List the alerts raised by one network-monitored device (SNMP, TCP, HTTP or generic)."""
 
         async def action(client: AteraClient) -> dict:
-            return list_result(await client.get(f"/alerts/device/{int(deviceId)}", page_params(page, itemsInPage)))
+            number, size, start = locate(offset, page, itemsInPage)
+            document = await client.get(f"/alerts/device/{int(deviceId)}", page_params(number, size))
+            return list_result(document, None, number, size, start)
 
         return await run_tool("atera_alerts_by_device", client_factory, action)

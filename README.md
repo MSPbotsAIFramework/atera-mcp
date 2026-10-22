@@ -36,7 +36,10 @@ A request to `/mcp` without the header gets HTTP 401 listing the required header
 ## Tools
 
 All tools return a JSON string. List tools take `page` (from 1) and `itemsInPage` (default and
-maximum 50) and return `{items, count, page, total_pages, total_items, has_more}`.
+maximum 50) and return `{items, count, page, total_pages, total_items, has_more, offset, next_offset}`.
+They also take `offset` (0-based record position, overrides `page`): to continue, pass `next_offset`
+from the previous result. It starts right after the last record returned, also when a result was cut
+to fit the response size limit, where the next page number would skip the rest of the cut page.
 
 | Tool | Purpose | Parameters (required in **bold**) |
 |---|---|---|

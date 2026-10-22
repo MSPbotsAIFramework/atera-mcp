@@ -19,16 +19,28 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
 from ..api_client import AteraClient
-from ._common import READ_ONLY, ClientFactory, CustomerId, ItemsInPage, Page, list_result, page_params, run_tool
+from ._common import (
+    READ_ONLY,
+    ClientFactory,
+    CustomerId,
+    ItemsInPage,
+    Offset,
+    Page,
+    list_result,
+    locate,
+    page_params,
+    run_tool,
+)
 
 
 def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
     @mcp.tool(annotations=READ_ONLY)
-    async def atera_contacts_list(page: Page = None, itemsInPage: ItemsInPage = None) -> str:
+    async def atera_contacts_list(page: Page = None, itemsInPage: ItemsInPage = None, offset: Offset = None) -> str:
         """List contacts (end users at all customers): name, e-mail, phone, job title, customer."""
 
         async def action(client: AteraClient) -> dict:
-            return list_result(await client.get("/contacts", page_params(page, itemsInPage)))
+            number, size, start = locate(offset, page, itemsInPage)
+            return list_result(await client.get("/contacts", page_params(number, size)), None, number, size, start)
 
         return await run_tool("atera_contacts_list", client_factory, action)
 
@@ -48,12 +60,13 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
         customerId: CustomerId,
         page: Page = None,
         itemsInPage: ItemsInPage = None,
+        offset: Offset = None,
     ) -> str:
         """List the contacts of one customer."""
 
         async def action(client: AteraClient) -> dict:
-            return list_result(
-                await client.get(f"/contacts/customer/{int(customerId)}", page_params(page, itemsInPage))
-            )
+            number, size, start = locate(offset, page, itemsInPage)
+            document = await client.get(f"/contacts/customer/{int(customerId)}", page_params(number, size))
+            return list_result(document, None, number, size, start)
 
         return await run_tool("atera_contacts_by_customer", client_factory, action)

@@ -19,7 +19,19 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
 from ..api_client import AteraClient
-from ._common import READ_ONLY, WRITES, ClientFactory, ItemsInPage, Page, enum_value, list_result, page_params, run_tool
+from ._common import (
+    READ_ONLY,
+    WRITES,
+    ClientFactory,
+    ItemsInPage,
+    Offset,
+    Page,
+    enum_value,
+    list_result,
+    locate,
+    page_params,
+    run_tool,
+)
 
 TicketId = Annotated[int, Field(description="Ticket id (from atera_tickets_list).")]
 PriorityValue = Literal["Low", "Medium", "High", "Critical"]
@@ -65,11 +77,13 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
         technicianId: Annotated[int | None, Field(description="Only tickets assigned to this technician.")] = None,
         dateFrom: Annotated[str | None, Field(description="Created on or after, YYYY-MM-DD.")] = None,
         dateTo: Annotated[str | None, Field(description="Created on or before, YYYY-MM-DD.")] = None,
+        offset: Offset = None,
     ) -> str:
         """List tickets: number, title, status, priority, customer, contact, technician, SLA, dates."""
 
         async def action(client: AteraClient) -> dict:
-            params = page_params(page, itemsInPage) | _compact(
+            number, size, start = locate(offset, page, itemsInPage)
+            params = page_params(number, size) | _compact(
                 {
                     "TicketStatus": enum_value(ticketStatus, StatusValue),
                     "CustomerID": customerId,
@@ -78,7 +92,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                     "DateTo": dateTo,
                 }
             )
-            return list_result(await client.get("/tickets", params), SUMMARY_FIELDS)
+            return list_result(await client.get("/tickets", params), SUMMARY_FIELDS, number, size, start)
 
         return await run_tool("atera_tickets_list", client_factory, action)
 
