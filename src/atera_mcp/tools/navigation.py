@@ -50,6 +50,13 @@ DOMAIN_TOOLS: dict[str, dict[str, str]] = {
         "atera_contacts_get": "One contact.",
         "atera_contacts_by_customer": "Contacts of one customer.",
     },
+    "billing": {
+        "atera_invoices_list": "List invoices.",
+        "atera_invoice_get": "One invoice, including line items.",
+        "atera_contracts_list": "List contracts (service agreements).",
+        "atera_contract_get": "One contract.",
+        "atera_contracts_by_customer": "Contracts of one customer.",
+    },
 }
 
 
@@ -57,11 +64,11 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
     @mcp.tool(annotations=READ_ONLY)
     async def atera_navigate(
         domain: Annotated[
-            Literal["customers", "agents", "tickets", "alerts", "contacts"],
+            Literal["customers", "agents", "tickets", "alerts", "contacts", "billing"],
             Field(description="Area to show tools for."),
         ],
     ) -> str:
-        """Show which tools cover one area: customers, agents, tickets, alerts or contacts.
+        """Show which tools cover one area: customers, agents, tickets, alerts, contacts or billing.
 
         All tools are always available; this is only a guide. Makes no API call.
         """

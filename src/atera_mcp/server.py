@@ -53,6 +53,8 @@ INSTRUCTIONS = (
     "- Help desk: atera_tickets_list(ticketStatus='Open') -> atera_tickets_get; "
     "atera_tickets_add_comment adds an internal note by default.\n"
     "- People: atera_contacts_by_customer(customerId).\n"
+    "- Billing: atera_contracts_by_customer(customerId) for agreements, "
+    "atera_invoices_list / atera_invoice_get(invoiceNumber) for invoices.\n"
     "All tools are always available (atera_navigate only lists one area). "
     "Lists use page / itemsInPage (max 50) and return {items, page, "
     "total_pages, total_items, has_more}. atera_customers_create, "
@@ -125,9 +127,9 @@ def create_mcp_server(settings: Settings | None = None) -> FastMCP:
 
     client_factory: Callable[[], AteraClient | None] = get_client_from_context
 
-    from .tools import agents, alerts, contacts, customers, navigation, tickets
+    from .tools import agents, alerts, billing, contacts, customers, navigation, tickets
 
-    for module in (navigation, customers, agents, tickets, alerts, contacts):
+    for module in (navigation, customers, agents, tickets, alerts, contacts, billing):
         module.register(mcp, client_factory)
 
     return mcp
