@@ -2,8 +2,8 @@
 
 An [MCP](https://modelcontextprotocol.io) server for the [Atera](https://www.atera.com) RMM and
 PSA API (v3). It lets an AI agent read an MSP's Atera data (customers, monitored agents,
-alerts, tickets and contacts) and, on explicit request, create customers and tickets, update
-tickets and add ticket comments.
+alerts, tickets, contacts, invoices and contracts) and, on explicit request, create customers
+and tickets, update tickets and add ticket comments.
 
 - Transport: MCP Streamable HTTP at `POST /mcp`, health probe at `GET /health`
 - Stateless and multi-tenant: the API key arrives on every request as an HTTP header and is
@@ -94,8 +94,9 @@ Where to get it:
 - In Atera open **Admin -> Data management -> API -> New token**. A token has an expiration
   date (at most one year), an optional IP allowlist, and either full access or per-domain
   Read / Write / Delete permissions.
-- Grant **Read** on Customers, Agents, Tickets, Alerts and Contacts for the read tools; add
-  **Write** on Customers and Tickets only if the agent should create or update them.
+- Grant **Read** on Customers, Agents, Tickets, Alerts, Contacts and Billing/Contracts for the
+  read tools; add **Write** on Customers and Tickets only if the agent should create or update
+  them. There is no write access to invoices or contracts from this server.
 - If the token restricts IP addresses, allow the public egress IP of the environment that runs
   this server.
 
@@ -115,7 +116,7 @@ to fit the response size limit, where the next page number would skip the rest o
 
 | Tool | Purpose | Parameters (required in **bold**) |
 |---|---|---|
-| `atera_navigate` | Show the tools of one area | **domain** (`customers`, `agents`, `tickets`, `alerts`, `contacts`) |
+| `atera_navigate` | Show the tools of one area | **domain** (`customers`, `agents`, `tickets`, `alerts`, `contacts`, `billing`) |
 | `atera_back` | List all areas and their tools | - |
 | `atera_customers_list` | List customers | page, itemsInPage |
 | `atera_customers_get` | One customer | **customerId** |
@@ -135,6 +136,11 @@ to fit the response size limit, where the next page number would skip the rest o
 | `atera_contacts_list` | List contacts | page, itemsInPage |
 | `atera_contacts_get` | One contact | **contactId** |
 | `atera_contacts_by_customer` | Contacts of one customer | **customerId**, page, itemsInPage |
+| `atera_invoices_list` | List invoices | page, itemsInPage |
+| `atera_invoice_get` | One invoice, including line items | **invoiceNumber** |
+| `atera_contracts_list` | List contracts (service agreements) | page, itemsInPage |
+| `atera_contract_get` | One contract | **contractId** |
+| `atera_contracts_by_customer` | Contracts of one customer | **customerId**, page, itemsInPage |
 
 Errors come back as a JSON envelope instead of an exception:
 

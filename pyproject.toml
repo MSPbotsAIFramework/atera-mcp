@@ -1,7 +1,7 @@
 [project]
 name = "atera-mcp"
 version = "1.0.0"
-description = "MCP server for the Atera RMM/PSA API (customers, agents, tickets, alerts, contacts)"
+description = "MCP server for the Atera RMM/PSA API (customers, agents, tickets, alerts, contacts, billing)"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]

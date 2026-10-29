@@ -44,6 +44,11 @@ EXPECTED_TOOLS: dict[str, set[str]] = {
     "atera_contacts_list": set(),
     "atera_contacts_get": {"contactId"},
     "atera_contacts_by_customer": {"customerId"},
+    "atera_invoices_list": set(),
+    "atera_invoice_get": {"invoiceNumber"},
+    "atera_contracts_list": set(),
+    "atera_contract_get": {"contractId"},
+    "atera_contracts_by_customer": {"customerId"},
 }
 
 WRITE_TOOLS = {"atera_customers_create", "atera_tickets_create", "atera_tickets_update", "atera_tickets_add_comment"}

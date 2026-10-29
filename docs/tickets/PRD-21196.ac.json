@@ -4,14 +4,18 @@
     "ac": "AC1",
     "text": "Given a valid Atera API key, when atera_invoices_list is called, then the result envelope has items/count/page/total_pages/total_items/has_more and items is a list",
     "type": "auto",
-    "tests": ["tests/test_tools.py::test_all_tools_listed_without_navigation", "tests/test_tools.py::test_billing_list_tools_shape"]
+    "tests": [
+      "tests/test_api_client.py::test_billing_list_tools_shape[atera_invoices_list]"
+    ]
   },
   {
     "id": "TC-ATB-002",
     "ac": "AC1",
     "text": "Given itemsInPage greater than 50, when atera_invoices_list is called, then the page size sent to Atera is capped at 50",
     "type": "auto",
-    "tests": ["tests/test_tools.py::test_billing_list_page_size_capped"]
+    "tests": [
+      "tests/test_api_client.py::test_billing_list_page_size_capped[atera_invoices_list]"
+    ]
   },
   {
     "id": "TC-ATB-003",
@@ -32,14 +36,18 @@
     "ac": "AC3",
     "text": "Given Atera returns 404 for an invoice number, when atera_invoice_get is called, then the tool returns {error: not_found}, not an unhandled exception",
     "type": "auto",
-    "tests": ["tests/test_tools.py::test_billing_invoice_get_not_found"]
+    "tests": [
+      "tests/test_api_client.py::test_billing_invoice_get_not_found"
+    ]
   },
   {
     "id": "TC-ATB-005",
     "ac": "AC4",
     "text": "Given a valid Atera API key, when atera_contracts_list is called, then the result envelope has the standard list shape",
     "type": "auto",
-    "tests": ["tests/test_tools.py::test_billing_list_tools_shape"]
+    "tests": [
+      "tests/test_api_client.py::test_billing_list_tools_shape[atera_contracts_list]"
+    ]
   },
   {
     "id": "TC-ATB-006",
@@ -73,62 +81,83 @@
     "ac": "AC6",
     "text": "Given a customer id with zero contracts, when atera_contracts_by_customer is called, then items is an empty list and count is 0, not an error",
     "type": "auto",
-    "tests": ["tests/test_tools.py::test_billing_contracts_by_customer_empty"]
+    "tests": [
+      "tests/test_api_client.py::test_billing_contracts_by_customer_empty"
+    ]
   },
   {
     "id": "TC-ATB-009",
     "ac": "AC7",
     "text": "Given Atera returns 404 for a contract id, when atera_contract_get is called, then the tool returns {error: not_found}",
     "type": "auto",
-    "tests": ["tests/test_tools.py::test_billing_contract_get_not_found"]
+    "tests": [
+      "tests/test_api_client.py::test_billing_contract_get_not_found"
+    ]
   },
   {
     "id": "TC-ATB-010",
     "ac": "AC7",
     "text": "Given Atera returns 404 for a customer id in atera_contracts_by_customer, when the tool is called, then the tool returns {error: not_found}, not an exception",
     "type": "auto",
-    "tests": ["tests/test_tools.py::test_billing_contracts_by_customer_not_found"]
+    "tests": [
+      "tests/test_api_client.py::test_billing_contracts_by_customer_not_found"
+    ]
   },
   {
     "id": "TC-ATB-011",
     "ac": "AC8",
     "text": "Given a /mcp request with the X-Atera-Api-Key header missing, when any of the five new tools is called, then the gateway responds 401 before any Atera call is attempted",
     "type": "auto",
-    "tests": ["tests/test_middleware.py::test_missing_header_rejected"]
+    "tests": [
+      "tests/test_middleware.py::test_missing_key_returns_401"
+    ],
+    "notes": "the X-Atera-Api-Key gate is enforced by GatewayCredentialsMiddleware on path prefix /mcp, before any tool dispatch -- it is tool-agnostic by construction, so this existing generic test is the correct evidence for the five new tools too (confirmed by reading server.py:86-91: the path check runs before the JSON-RPC body, including the tool name, is ever parsed)."
   },
   {
     "id": "TC-ATB-012",
     "ac": "AC8",
     "text": "Given Atera itself returns 401/403 for a billing call, when a new tool is called, then the tool returns {error: unauthorized}",
     "type": "auto",
-    "tests": ["tests/test_tools.py::test_billing_unauthorized_envelope"]
+    "tests": [
+      "tests/test_api_client.py::test_billing_unauthorized_envelope"
+    ]
   },
   {
     "id": "TC-ATB-013",
     "ac": "AC8",
     "text": "Given two concurrent /mcp requests to atera_invoices_list with two different X-Atera-Api-Key values, when both are in flight at once, then each response contains only the data for its own request's key -- no credential or response data crosses between the two concurrent calls",
     "type": "auto",
-    "tests": ["tests/test_middleware.py::test_concurrent_requests_do_not_share_credentials_billing"]
+    "tests": [
+      "tests/test_api_client.py::test_concurrent_billing_calls_do_not_share_credentials"
+    ]
   },
   {
     "id": "TC-ATB-014",
     "ac": "AC9",
     "text": "Given the server is created, when atera_navigate(domain=billing) is called, then it returns the five new tool names; when atera_back is called, then billing is among the listed domains",
     "type": "auto",
-    "tests": ["tests/test_tools.py::test_navigate_billing_domain", "tests/test_tools.py::test_back_lists_billing_domain"]
+    "tests": [
+      "tests/test_api_client.py::test_navigate_billing_domain",
+      "tests/test_api_client.py::test_back_lists_billing_domain"
+    ]
   },
   {
     "id": "TC-ATB-015",
     "ac": "AC10",
     "text": "Given the 20 existing tools, when the new tools are added, then test_contract_types.py and the unchanged portion of EXPECTED_TOOLS still pass without modification to any existing entry",
     "type": "auto",
-    "tests": ["tests/test_contract_types.py::test_parameter_still_accepts_previous_types", "tests/test_tools.py::test_all_tools_listed_without_navigation"]
+    "tests": [
+      "tests/test_contract_types.py::test_parameter_still_accepts_previous_types",
+      "tests/test_tools.py::test_all_tools_listed_without_navigation"
+    ]
   },
   {
     "id": "TC-ATB-016",
     "ac": "AC2",
     "text": "Given Atera returns 429 for a billing call, when the tool is called, then the client retries per the existing backoff policy and the eventual error, if retries are exhausted, is {error: rate_limited, retryable: true}",
     "type": "auto",
-    "tests": ["tests/test_api_client.py::test_billing_path_retries_on_429"]
+    "tests": [
+      "tests/test_api_client.py::test_billing_path_retries_on_429"
+    ]
   }
 ]

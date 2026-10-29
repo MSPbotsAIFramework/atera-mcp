@@ -13,6 +13,7 @@
 # limitations under the License.
 """Auth header selection, paging and tool behaviour against a mocked Atera API."""
 
+import asyncio
 import json
 
 import httpx
@@ -206,6 +207,131 @@ async def test_navigate_and_back_need_no_api_call(monkeypatch):
     assert rec.requests == []
 
 
+# ---- Billing (invoices + contracts, PRD-21196) --------------------------------------------------
+
+
+async def test_navigate_billing_domain(monkeypatch):
+    rec = Recorder()
+    nav = await _call(monkeypatch, rec, "atera_navigate", {"domain": "billing"})
+    assert set(nav["tools"]) == {
+        "atera_invoices_list",
+        "atera_invoice_get",
+        "atera_contracts_list",
+        "atera_contract_get",
+        "atera_contracts_by_customer",
+    }
+    assert rec.requests == []
+
+
+async def test_back_lists_billing_domain(monkeypatch):
+    rec = Recorder()
+    back = await _call(monkeypatch, rec, "atera_back", {})
+    assert "billing" in back["domains"]
+    assert "atera_invoice_get" in back["domains"]["billing"]
+
+
+@pytest.mark.parametrize(
+    "tool,args,method,path",
+    [
+        ("atera_invoice_get", {"invoiceNumber": "INV-1001"}, "GET", "/api/v3/billing/invoice/INV-1001"),
+        ("atera_contract_get", {"contractId": 11}, "GET", "/api/v3/contracts/11"),
+    ],
+)
+async def test_billing_read_routing(monkeypatch, tool, args, method, path):
+    rec = Recorder(lambda r: httpx.Response(200, json={}))
+    await _call(monkeypatch, rec, tool, args)
+    req = rec.requests[0]
+    assert (req.method, req.url.raw_path.decode().split("?")[0]) == (method, path)
+
+
+@pytest.mark.parametrize("tool", ["atera_invoices_list", "atera_contracts_list"])
+async def test_billing_list_tools_shape(monkeypatch, tool):
+    page = {"items": [{"id": 1}], "page": 1, "totalPages": 1, "totalItemCount": 1, "nextLink": None}
+    rec = Recorder(lambda r: httpx.Response(200, json=page))
+    result = await _call(monkeypatch, rec, tool, {})
+    assert set(result) >= {"items", "count", "page", "total_pages", "total_items", "has_more"}
+    assert result["items"] == [{"id": 1}]
+
+
+@pytest.mark.parametrize("tool", ["atera_invoices_list", "atera_contracts_list"])
+async def test_billing_list_page_size_capped(monkeypatch, tool):
+    rec = Recorder()
+    await _call(monkeypatch, rec, tool, {"itemsInPage": 500})
+    assert rec.requests[0].url.params["ItemsInPage"] == "50"
+
+
+async def test_billing_contracts_by_customer_empty(monkeypatch):
+    rec = Recorder(lambda r: httpx.Response(200, json={"items": [], "page": 1, "totalPages": 1, "totalItemCount": 0}))
+    result = await _call(monkeypatch, rec, "atera_contracts_by_customer", {"customerId": 999})
+    assert (result["items"], result["count"]) == ([], 0)
+    assert "error" not in result
+
+
+async def test_billing_invoice_get_not_found(monkeypatch):
+    rec = Recorder(lambda r: httpx.Response(404, json={"Message": "Invoice not found."}))
+    result = await _call(monkeypatch, rec, "atera_invoice_get", {"invoiceNumber": "does-not-exist"})
+    assert result["error"]["code"] == "not_found"
+
+
+async def test_billing_contract_get_not_found(monkeypatch):
+    rec = Recorder(lambda r: httpx.Response(404, json={"Message": "Contract not found."}))
+    result = await _call(monkeypatch, rec, "atera_contract_get", {"contractId": 404404})
+    assert result["error"]["code"] == "not_found"
+
+
+async def test_billing_contracts_by_customer_not_found(monkeypatch):
+    rec = Recorder(lambda r: httpx.Response(404, json={"Message": "Customer not found."}))
+    result = await _call(monkeypatch, rec, "atera_contracts_by_customer", {"customerId": 404404})
+    assert result["error"]["code"] == "not_found"
+
+
+async def test_billing_unauthorized_envelope(monkeypatch):
+    rec = Recorder(lambda r: httpx.Response(401, json={"Message": "Authorization has been denied for this request."}))
+    result = await _call(monkeypatch, rec, "atera_invoices_list", {}, key="revoked-key")
+    assert result["error"]["code"] == "unauthorized"
+    assert "revoked-key" not in json.dumps(result)
+
+
+async def test_concurrent_billing_calls_do_not_share_credentials(monkeypatch):
+    """TC-ATB-013: the shared httpx client + contextvars isolation, exercised for the new tool
+    specifically (not assumed from the other five domains already proven in test_middleware.py)."""
+    seen: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        key = request.headers.get("x-api-key") or request.headers.get("authorization")
+        await asyncio.sleep(0.02)  # force both in-flight requests to overlap
+        seen.append(key)
+        return httpx.Response(200, json={"items": [{"id": key}], "page": 1, "totalPages": 1, "totalItemCount": 1})
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(api_client, "_get_shared_http_client", lambda: http)
+    mcp = create_mcp_server()
+
+    async def call(key: str) -> dict:
+        ctx = _credentials_var.set(AteraCredentials(key))
+        try:
+            content, _ = await mcp.call_tool("atera_invoices_list", {})
+        finally:
+            _credentials_var.reset(ctx)
+        return json.loads(content[0].text)
+
+    result_a, result_b = await asyncio.gather(call("tenant-a-key"), call("tenant-b-key"))
+    assert result_a["items"][0]["id"] == "tenant-a-key"
+    assert result_b["items"][0]["id"] == "tenant-b-key"
+    assert sorted(seen) == ["tenant-a-key", "tenant-b-key"]
+
+
+async def test_billing_path_retries_on_429(monkeypatch):
+    rec = Recorder(lambda r: httpx.Response(429, headers={"Retry-After": "0"}, json={"message": "Too many requests"}))
+    result = await _call(monkeypatch, rec, "atera_invoices_list", {})
+    assert len(rec.requests) == 1 + api_client._MAX_RETRIES  # exhausted all retries
+    assert result["error"] == {
+        "code": "rate_limited",
+        "message": "Atera returned HTTP 429: Too many requests",
+        "retryable": True,
+    }
+
+
 def test_client_never_sends_both_auth_headers():
     for key in (JWT_KEY, "legacy-key"):
         headers = AteraClient(AteraCredentials(key))._headers()
@@ -252,6 +378,9 @@ PAGED_TOOLS = [
     ("atera_alerts_by_device", "/api/v3/alerts/device/6", {"deviceId": 6}, "id"),
     ("atera_contacts_list", "/api/v3/contacts", {}, "id"),
     ("atera_contacts_by_customer", "/api/v3/contacts/customer/7", {"customerId": 7}, "id"),
+    ("atera_invoices_list", "/api/v3/billing/invoices", {}, "id"),
+    ("atera_contracts_list", "/api/v3/contracts", {}, "id"),
+    ("atera_contracts_by_customer", "/api/v3/contracts/customer/11", {"customerId": 11}, "id"),
 ]
 
 

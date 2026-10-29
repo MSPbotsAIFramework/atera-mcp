@@ -40,6 +40,8 @@ NOT_CONFIGURED = error_envelope(
 Page = Annotated[int | None, Field(description="Page number, starting at 1 (default 1).")]
 ItemsInPage = Annotated[int | None, Field(description=f"Items per page (default {MAX_PAGE_SIZE}, max {MAX_PAGE_SIZE}).")]
 CustomerId = Annotated[int, Field(description="Atera customer id (from atera_customers_list).")]
+ContractId = Annotated[int, Field(description="Atera contract id (from atera_contracts_list).")]
+InvoiceNumber = Annotated[str, Field(description="Atera invoice number (from atera_invoices_list).")]
 Offset = Annotated[
     int | None,
     Field(description="Record position to start from (0-based, overrides page); pass next_offset from the previous result.", ge=0),
